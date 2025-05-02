@@ -12,13 +12,17 @@ from dotenv import load_dotenv
 # config 폴더의 .env 파일 로드
 load_dotenv()
 
-# API 키 가져오기
-UPBIT_ACCESS_KEY = os.getenv('UPBIT_ACCESS_KEY')
-UPBIT_SECRET_KEY = os.getenv('UPBIT_SECRET_KEY')
+# API 키 가져오기 - Streamlit Cloud Secrets를 우선적으로 사용
+UPBIT_ACCESS_KEY = st.secrets.get("UPBIT_ACCESS_KEY", os.getenv('UPBIT_ACCESS_KEY'))
+UPBIT_SECRET_KEY = st.secrets.get("UPBIT_SECRET_KEY", os.getenv('UPBIT_SECRET_KEY'))
 
 # API 키가 없으면 에러 메시지 표시
 if not UPBIT_ACCESS_KEY or not UPBIT_SECRET_KEY:
-    st.error("API keys not found in config/.env file. Please check your configuration.")
+    st.error("""
+        API keys not found. Please check:
+        1. Streamlit Cloud Secrets 설정
+        2. .env 파일 설정
+    """)
     st.stop()
 
 # 페이지 설정
@@ -127,12 +131,34 @@ def calculate_all_coin_signals():
 # Upbit API를 통한 계좌 정보 가져오기
 def get_account_info():
     try:
+        st.write("API 키 확인 중...")
+        st.write(f"Access Key 길이: {len(UPBIT_ACCESS_KEY) if UPBIT_ACCESS_KEY else 0}")
+        st.write(f"Secret Key 길이: {len(UPBIT_SECRET_KEY) if UPBIT_SECRET_KEY else 0}")
+        
         upbit = pyupbit.Upbit(UPBIT_ACCESS_KEY, UPBIT_SECRET_KEY)
+        st.write("계좌 정보 요청 중...")
         balances = upbit.get_balances()
+        
+        # API 응답이 문자열인 경우 처리
+        if isinstance(balances, str):
+            st.error(f"API 응답 오류: {balances}")
+            return []
+            
+        if balances is None:
+            st.error("계좌 정보를 가져올 수 없습니다. API 키를 확인해주세요.")
+            return []
+            
+        # balances가 리스트가 아닌 경우 처리
+        if not isinstance(balances, list):
+            st.error(f"예상치 못한 API 응답 형식: {type(balances)}")
+            return []
+            
+        st.write(f"계좌 정보 수신 완료: {len(balances)}개의 항목")
         return balances
     except Exception as e:
-        st.error(f"Error getting account info: {str(e)}")
-        return None
+        st.error(f"계좌 정보 조회 중 오류 발생: {str(e)}")
+        st.error(f"오류 상세: {type(e).__name__}")
+        return []
 
 # 사이드바 설정
 st.sidebar.title("MRHA Trading System")
@@ -289,18 +315,25 @@ elif menu == "Execute ODA":
         st.subheader("Account Information")
         
         # KRW 잔고
-        krw_balance = next((item for item in balances if item['currency'] == 'KRW'), None)
-        if krw_balance:
-            st.write(f"KRW Balance: {float(krw_balance['balance']):,.0f} KRW")
+        try:
+            krw_balance = next((item for item in balances if isinstance(item, dict) and item.get('currency') == 'KRW'), None)
+            if krw_balance:
+                st.write(f"KRW Balance: {float(krw_balance.get('balance', 0)):,.0f} KRW")
+        except Exception as e:
+            st.error(f"KRW 잔고 조회 중 오류: {str(e)}")
         
         # 코인 잔고
         st.subheader("Coin Positions")
         for balance in balances:
-            if balance['currency'] != 'KRW':
-                ticker = f"KRW-{balance['currency']}"
-                current_price = pyupbit.get_current_price(ticker)
-                total_value = float(balance['balance']) * current_price
-                st.write(f"{ticker}: {float(balance['balance']):,.8f} ({total_value:,.0f} KRW)")
+            if isinstance(balance, dict) and balance.get('currency') != 'KRW':
+                try:
+                    ticker = f"KRW-{balance.get('currency')}"
+                    current_price = pyupbit.get_current_price(ticker)
+                    if current_price is not None:
+                        total_value = float(balance.get('balance', 0)) * current_price
+                        st.write(f"{ticker}: {float(balance.get('balance', 0)):,.8f} ({total_value:,.0f} KRW)")
+                except Exception as e:
+                    st.warning(f"{ticker} 가격 조회 중 오류 발생: {str(e)}")
     
     # 주문 실행
     st.subheader("Place Order")
@@ -314,30 +347,36 @@ elif menu == "Execute ODA":
     if order_type == "Buy":
         # 매수 주문
         if krw_balance:
-            max_buy_amount = float(krw_balance['balance'])
-            st.write(f"Maximum Buy Amount: {max_buy_amount:,.0f} KRW")
-            
-            buy_amount = st.number_input("Buy Amount (KRW)", min_value=0.0, max_value=max_buy_amount)
-            if st.button("Execute Buy Order"):
-                try:
-                    upbit = pyupbit.Upbit(UPBIT_ACCESS_KEY, UPBIT_SECRET_KEY)
-                    result = upbit.buy_market_order(selected_coin, buy_amount)
-                    st.success(f"Buy order executed: {result}")
-                except Exception as e:
-                    st.error(f"Error executing buy order: {str(e)}")
+            try:
+                max_buy_amount = float(krw_balance.get('balance', 0))
+                st.write(f"Maximum Buy Amount: {max_buy_amount:,.0f} KRW")
+                
+                buy_amount = st.number_input("Buy Amount (KRW)", min_value=0.0, max_value=max_buy_amount)
+                if st.button("Execute Buy Order"):
+                    try:
+                        upbit = pyupbit.Upbit(UPBIT_ACCESS_KEY, UPBIT_SECRET_KEY)
+                        result = upbit.buy_market_order(selected_coin, buy_amount)
+                        st.success(f"Buy order executed: {result}")
+                    except Exception as e:
+                        st.error(f"매수 주문 실행 중 오류 발생: {str(e)}")
+            except Exception as e:
+                st.error(f"매수 금액 계산 중 오류: {str(e)}")
     
     else:
         # 매도 주문
-        coin_balance = next((item for item in balances if item['currency'] == selected_coin.replace("KRW-", "")), None)
-        if coin_balance:
-            sell_amount = st.number_input("Sell Amount", min_value=0.0, max_value=float(coin_balance['balance']))
-            if st.button("Execute Sell Order"):
-                try:
-                    upbit = pyupbit.Upbit(UPBIT_ACCESS_KEY, UPBIT_SECRET_KEY)
-                    result = upbit.sell_market_order(selected_coin, sell_amount)
-                    st.success(f"Sell order executed: {result}")
-                except Exception as e:
-                    st.error(f"Error executing sell order: {str(e)}")
+        try:
+            coin_balance = next((item for item in balances if isinstance(item, dict) and item.get('currency') == selected_coin.replace("KRW-", "")), None)
+            if coin_balance:
+                sell_amount = st.number_input("Sell Amount", min_value=0.0, max_value=float(coin_balance.get('balance', 0)))
+                if st.button("Execute Sell Order"):
+                    try:
+                        upbit = pyupbit.Upbit(UPBIT_ACCESS_KEY, UPBIT_SECRET_KEY)
+                        result = upbit.sell_market_order(selected_coin, sell_amount)
+                        st.success(f"Sell order executed: {result}")
+                    except Exception as e:
+                        st.error(f"매도 주문 실행 중 오류 발생: {str(e)}")
+        except Exception as e:
+            st.error(f"매도 금액 계산 중 오류: {str(e)}")
 
 # 정보 메시지 표시
 st.sidebar.info("Select a menu option to proceed.") 
