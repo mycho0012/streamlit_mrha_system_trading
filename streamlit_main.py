@@ -311,6 +311,8 @@ elif menu == "Execute ODA":
     
     # 계좌 정보 표시
     balances = get_account_info()
+    krw_balance = None  # krw_balance 변수 초기화
+    
     if balances:
         st.subheader("Account Information")
         
@@ -346,7 +348,7 @@ elif menu == "Execute ODA":
     
     if order_type == "Buy":
         # 매수 주문
-        if krw_balance:
+        if krw_balance:  # 이제 krw_balance가 정의되어 있음
             try:
                 max_buy_amount = float(krw_balance.get('balance', 0))
                 st.write(f"Maximum Buy Amount: {max_buy_amount:,.0f} KRW")
@@ -361,6 +363,8 @@ elif menu == "Execute ODA":
                         st.error(f"매수 주문 실행 중 오류 발생: {str(e)}")
             except Exception as e:
                 st.error(f"매수 금액 계산 중 오류: {str(e)}")
+        else:
+            st.warning("KRW 잔고 정보를 불러올 수 없습니다. 계좌 정보를 확인해주세요.")
     
     else:
         # 매도 주문
@@ -375,6 +379,8 @@ elif menu == "Execute ODA":
                         st.success(f"Sell order executed: {result}")
                     except Exception as e:
                         st.error(f"매도 주문 실행 중 오류 발생: {str(e)}")
+            else:
+                st.warning(f"{selected_coin} 잔고 정보를 불러올 수 없습니다.")
         except Exception as e:
             st.error(f"매도 금액 계산 중 오류: {str(e)}")
 
