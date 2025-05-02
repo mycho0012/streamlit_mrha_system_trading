@@ -16,12 +16,27 @@ load_dotenv()
 UPBIT_ACCESS_KEY = st.secrets.get("UPBIT_ACCESS_KEY", os.getenv('UPBIT_ACCESS_KEY'))
 UPBIT_SECRET_KEY = st.secrets.get("UPBIT_SECRET_KEY", os.getenv('UPBIT_SECRET_KEY'))
 
+# API 키 디버깅 정보 표시 (개발용)
+st.sidebar.write("API 키 상태:")
+st.sidebar.write(f"Access Key 설정: {'있음' if UPBIT_ACCESS_KEY else '없음'}")
+st.sidebar.write(f"Secret Key 설정: {'있음' if UPBIT_SECRET_KEY else '없음'}")
+
 # API 키가 없으면 에러 메시지 표시
 if not UPBIT_ACCESS_KEY or not UPBIT_SECRET_KEY:
     st.error("""
         API keys not found. Please check:
         1. Streamlit Cloud Secrets 설정
         2. .env 파일 설정
+        
+        Streamlit Cloud에서 Secrets를 설정하는 방법:
+        1. 앱의 'Manage app' 클릭
+        2. 'Settings' 탭으로 이동
+        3. 'Secrets' 섹션에서 다음 형식으로 입력:
+        ```
+        [secrets]
+        UPBIT_ACCESS_KEY = "your_access_key"
+        UPBIT_SECRET_KEY = "your_secret_key"
+        ```
     """)
     st.stop()
 
@@ -135,9 +150,18 @@ def get_account_info():
         st.write(f"Access Key 길이: {len(UPBIT_ACCESS_KEY) if UPBIT_ACCESS_KEY else 0}")
         st.write(f"Secret Key 길이: {len(UPBIT_SECRET_KEY) if UPBIT_SECRET_KEY else 0}")
         
+        # API 호출 전 딜레이 추가
+        time.sleep(1)
+        
         upbit = pyupbit.Upbit(UPBIT_ACCESS_KEY, UPBIT_SECRET_KEY)
         st.write("계좌 정보 요청 중...")
+        
+        # API 응답 시간 측정
+        start_time = time.time()
         balances = upbit.get_balances()
+        end_time = time.time()
+        
+        st.write(f"API 응답 시간: {end_time - start_time:.2f}초")
         
         # API 응답이 문자열인 경우 처리
         if isinstance(balances, str):
@@ -151,6 +175,7 @@ def get_account_info():
         # balances가 리스트가 아닌 경우 처리
         if not isinstance(balances, list):
             st.error(f"예상치 못한 API 응답 형식: {type(balances)}")
+            st.write(f"API 응답 내용: {balances}")  # API 응답 내용 표시
             return []
             
         st.write(f"계좌 정보 수신 완료: {len(balances)}개의 항목")
@@ -158,6 +183,8 @@ def get_account_info():
     except Exception as e:
         st.error(f"계좌 정보 조회 중 오류 발생: {str(e)}")
         st.error(f"오류 상세: {type(e).__name__}")
+        import traceback
+        st.error(f"스택 트레이스: {traceback.format_exc()}")
         return []
 
 # 사이드바 설정
