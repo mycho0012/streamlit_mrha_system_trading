@@ -8,9 +8,19 @@ from datetime import datetime, timedelta
 import time
 import os
 from dotenv import load_dotenv
+import json
+import requests
 
 # 페이지 설정 (가장 먼저 실행)
 st.set_page_config(page_title="MRHA Trading System", layout="wide")
+
+# 현재 IP 주소 확인
+def get_current_ip():
+    try:
+        response = requests.get('https://api.ipify.org?format=json')
+        return response.json()['ip']
+    except Exception as e:
+        return f"IP 확인 실패: {str(e)}"
 
 # config 폴더의 .env 파일 로드
 load_dotenv()
@@ -18,6 +28,13 @@ load_dotenv()
 # API 키 가져오기 - Streamlit Cloud Secrets를 우선적으로 사용
 UPBIT_ACCESS_KEY = st.secrets.get("UPBIT_ACCESS_KEY", os.getenv('UPBIT_ACCESS_KEY'))
 UPBIT_SECRET_KEY = st.secrets.get("UPBIT_SECRET_KEY", os.getenv('UPBIT_SECRET_KEY'))
+
+# API 키 디버깅 정보 표시 (개발용)
+with st.sidebar:
+    st.write("API 키 상태:")
+    st.write(f"Access Key 설정: {'있음' if UPBIT_ACCESS_KEY else '없음'}")
+    st.write(f"Secret Key 설정: {'있음' if UPBIT_SECRET_KEY else '없음'}")
+    st.write(f"현재 IP 주소: {get_current_ip()}")
 
 # API 키가 없으면 에러 메시지 표시
 if not UPBIT_ACCESS_KEY or not UPBIT_SECRET_KEY:
@@ -37,11 +54,6 @@ if not UPBIT_ACCESS_KEY or not UPBIT_SECRET_KEY:
         ```
     """)
     st.stop()
-
-# API 키 디버깅 정보 표시 (개발용)
-st.sidebar.write("API 키 상태:")
-st.sidebar.write(f"Access Key 설정: {'있음' if UPBIT_ACCESS_KEY else '없음'}")
-st.sidebar.write(f"Secret Key 설정: {'있음' if UPBIT_SECRET_KEY else '없음'}")
 
 # MRHA 봇 실행을 위한 함수 (캐시 비활성화)
 def run_mrha_bot(ticker, interval):
@@ -146,40 +158,56 @@ def calculate_all_coin_signals():
 # Upbit API를 통한 계좌 정보 가져오기
 def get_account_info():
     try:
-        st.write("API 키 확인 중...")
-        st.write(f"Access Key 길이: {len(UPBIT_ACCESS_KEY) if UPBIT_ACCESS_KEY else 0}")
-        st.write(f"Secret Key 길이: {len(UPBIT_SECRET_KEY) if UPBIT_SECRET_KEY else 0}")
-        
-        # API 호출 전 딜레이 추가
-        time.sleep(1)
-        
-        upbit = pyupbit.Upbit(UPBIT_ACCESS_KEY, UPBIT_SECRET_KEY)
-        st.write("계좌 정보 요청 중...")
-        
-        # API 응답 시간 측정
-        start_time = time.time()
-        balances = upbit.get_balances()
-        end_time = time.time()
-        
-        st.write(f"API 응답 시간: {end_time - start_time:.2f}초")
-        
-        # API 응답이 문자열인 경우 처리
-        if isinstance(balances, str):
-            st.error(f"API 응답 오류: {balances}")
-            return []
+        with st.spinner("계좌 정보를 불러오는 중..."):
+            # API 호출 전 딜레이 추가
+            time.sleep(1)
             
-        if balances is None:
-            st.error("계좌 정보를 가져올 수 없습니다. API 키를 확인해주세요.")
-            return []
+            upbit = pyupbit.Upbit(UPBIT_ACCESS_KEY, UPBIT_SECRET_KEY)
             
-        # balances가 리스트가 아닌 경우 처리
-        if not isinstance(balances, list):
-            st.error(f"예상치 못한 API 응답 형식: {type(balances)}")
-            st.write(f"API 응답 내용: {balances}")  # API 응답 내용 표시
-            return []
+            # API 응답 시간 측정
+            start_time = time.time()
+            balances = upbit.get_balances()
+            end_time = time.time()
             
-        st.write(f"계좌 정보 수신 완료: {len(balances)}개의 항목")
-        return balances
+            st.write(f"API 응답 시간: {end_time - start_time:.2f}초")
+            
+            # API 응답이 문자열인 경우 처리
+            if isinstance(balances, str):
+                try:
+                    # JSON 문자열인 경우 파싱 시도
+                    balances = json.loads(balances)
+                except json.JSONDecodeError:
+                    st.error(f"API 응답 오류: {balances}")
+                    return []
+            
+            if balances is None:
+                st.error("계좌 정보를 가져올 수 없습니다. API 키를 확인해주세요.")
+                return []
+            
+            # balances가 리스트가 아닌 경우 처리
+            if not isinstance(balances, list):
+                st.error(f"예상치 못한 API 응답 형식: {type(balances)}")
+                st.write(f"API 응답 내용: {balances}")
+                
+                # IP 인증 오류인 경우
+                if isinstance(balances, dict) and 'error' in balances:
+                    error_msg = balances['error']
+                    if error_msg.get('name') == 'no_authorization_ip':
+                        st.error("""
+                            IP 인증 오류가 발생했습니다.
+                            
+                            해결 방법:
+                            1. Upbit 계정에 로그인
+                            2. API 관리 페이지로 이동
+                            3. 현재 IP 주소를 허용 IP 목록에 추가
+                            4. IP 주소: 위의 사이드바에서 확인 가능
+                        """)
+                
+                return []
+            
+            st.success(f"계좌 정보 수신 완료: {len(balances)}개의 항목")
+            return balances
+            
     except Exception as e:
         st.error(f"계좌 정보 조회 중 오류 발생: {str(e)}")
         st.error(f"오류 상세: {type(e).__name__}")
