@@ -9,17 +9,15 @@ import time
 import os
 from dotenv import load_dotenv
 
+# 페이지 설정 (가장 먼저 실행)
+st.set_page_config(page_title="MRHA Trading System", layout="wide")
+
 # config 폴더의 .env 파일 로드
 load_dotenv()
 
 # API 키 가져오기 - Streamlit Cloud Secrets를 우선적으로 사용
 UPBIT_ACCESS_KEY = st.secrets.get("UPBIT_ACCESS_KEY", os.getenv('UPBIT_ACCESS_KEY'))
 UPBIT_SECRET_KEY = st.secrets.get("UPBIT_SECRET_KEY", os.getenv('UPBIT_SECRET_KEY'))
-
-# API 키 디버깅 정보 표시 (개발용)
-st.sidebar.write("API 키 상태:")
-st.sidebar.write(f"Access Key 설정: {'있음' if UPBIT_ACCESS_KEY else '없음'}")
-st.sidebar.write(f"Secret Key 설정: {'있음' if UPBIT_SECRET_KEY else '없음'}")
 
 # API 키가 없으면 에러 메시지 표시
 if not UPBIT_ACCESS_KEY or not UPBIT_SECRET_KEY:
@@ -40,8 +38,10 @@ if not UPBIT_ACCESS_KEY or not UPBIT_SECRET_KEY:
     """)
     st.stop()
 
-# 페이지 설정
-st.set_page_config(page_title="MRHA Trading System", layout="wide")
+# API 키 디버깅 정보 표시 (개발용)
+st.sidebar.write("API 키 상태:")
+st.sidebar.write(f"Access Key 설정: {'있음' if UPBIT_ACCESS_KEY else '없음'}")
+st.sidebar.write(f"Secret Key 설정: {'있음' if UPBIT_SECRET_KEY else '없음'}")
 
 # MRHA 봇 실행을 위한 함수 (캐시 비활성화)
 def run_mrha_bot(ticker, interval):
